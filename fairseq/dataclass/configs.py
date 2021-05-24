@@ -12,6 +12,7 @@ import torch
 from fairseq.dataclass.constants import (
     DATASET_IMPL_CHOICES,
     DDP_BACKEND_CHOICES,
+    DDP_COMM_HOOK_CHOICES,
     GENERATION_CONSTRAINTS_CHOICES,
     GENERATION_DECODING_FORMAT_CHOICES,
     LOG_FORMAT_CHOICES,
@@ -244,6 +245,9 @@ class DistributedTrainingConfig(FairseqDataclass):
     ddp_backend: DDP_BACKEND_CHOICES = field(
         default="pytorch_ddp", metadata={"help": "DistributedDataParallel backend"}
     )
+    ddp_comm_hook: DDP_COMM_HOOK_CHOICES = field(
+        default="none", metadata={"help": "communication hook"}
+    )
     bucket_cap_mb: int = field(
         default=25, metadata={"help": "bucket size for reduction"}
     )
@@ -375,6 +379,9 @@ class DistributedTrainingConfig(FairseqDataclass):
     cpu_offload: bool = field(
         default=False, metadata={"help": "offload FP32 params to CPU"}
     )
+    use_sharded_state: bool = field(
+        default=False, metadata={"help": "use sharded checkpoint files"},
+    )
 
 
 @dataclass
@@ -422,6 +429,19 @@ class DatasetConfig(FairseqDataclass):
             " (e.g. train, valid, test)"
         },
     )
+    combine_valid_subsets: Optional[bool] = field(
+        default=None,
+        metadata={
+            "help": "comma separated list of data subsets to use for validation"
+                    " (e.g. train, valid, test)",
+            "argparse_alias": "--combine-val",
+        },
+    )
+    ignore_unused_valid_subsets: Optional[bool] = field(
+        default=False,
+        metadata={"help": "do not raise error if valid subsets are ignored"},
+    )
+
     validate_interval: int = field(
         default=1, metadata={"help": "validate every N epochs"}
     )
