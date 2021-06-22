@@ -73,7 +73,10 @@ class Trainer(object):
                     "option (it's already built in)"
                 )
         else:
-            if self.cfg.distributed_training.cpu_offload:
+            if (
+                hasattr(self.cfg.distributed_training, "cpu_offload")
+                and self.cfg.distributed_training.cpu_offload
+            ):
                 raise ValueError("--cpu-offload requires --ddp-backend=fully_sharded")
 
         # copy model and criterion to current device/dtype
@@ -81,11 +84,14 @@ class Trainer(object):
         self._model = model
         if cfg.distributed_training.ddp_backend != "fully_sharded":
             if cfg.common.fp16:
+                assert not cfg.common.amp, "Cannot use fp16 and AMP together"
                 self._criterion = self._criterion.half()
                 self._model = self._model.half()
             elif cfg.common.bf16:
                 self._criterion = self._criterion.to(dtype=torch.bfloat16)
                 self._model = self._model.to(dtype=torch.bfloat16)
+            elif cfg.common.amp:
+                self._amp_retries = 0
         if (
             not cfg.distributed_training.pipeline_model_parallel
             # the DistributedFairseqModel wrapper will handle moving to device,
@@ -285,10 +291,10 @@ class Trainer(object):
             self._optimizer = optim.MemoryEfficientFP16Optimizer.build_optimizer(
                 self.cfg, params, allow_unsupported=allow_unsupported
             )
-        elif self.cfg.common.fp16 or self.cfg.common.bf16:
+        elif self.cfg.common.fp16 or self.cfg.common.bf16 or self.cfg.common.amp:
             if self.cuda and torch.cuda.get_device_capability(0)[0] < 7:
                 logger.info(
-                    "NOTE: your device does NOT support faster training with --fp16, "
+                    "NOTE: your device does NOT support faster training with --fp16 or --amp, "
                     "please switch to FP32 which is likely to be faster"
                 )
             if (
@@ -298,11 +304,13 @@ class Trainer(object):
                 self._optimizer = optim.MemoryEfficientFP16Optimizer.build_optimizer(
                     self.cfg, params
                 )
+            elif self.cfg.common.amp:
+                self._optimizer = optim.AMPOptimizer.build_optimizer(self.cfg, params)
             else:
                 self._optimizer = optim.FP16Optimizer.build_optimizer(self.cfg, params)
         else:
             if self.cuda and torch.cuda.get_device_capability(0)[0] >= 7:
-                logger.info("NOTE: your device may support faster training with --fp16")
+                logger.info("NOTE: your device may support faster training with --fp16 or --amp")
             self._optimizer = optim.build_optimizer(self.cfg.optimizer, params)
 
         if self.cfg.distributed_training.ddp_backend == "fully_sharded":
@@ -364,7 +372,7 @@ class Trainer(object):
         state_dict = {
             "args": None,  # legacy
             "cfg": (
-                OmegaConf.to_container(self.cfg)
+                OmegaConf.to_container(self.cfg, resolve=True, enum_to_str=True)
                 if OmegaConf.is_config(self.cfg)
                 else self.cfg
             ),
@@ -395,6 +403,9 @@ class Trainer(object):
                 self._gathered_optim_state = None
             else:
                 state_dict["last_optimizer_state"] = self.optimizer.state_dict()
+        if self.cfg.distributed_training.ddp_backend == "fully_sharded":
+            # save meta data for recombining checkpoint upon loading
+            state_dict["fsdp_metadata"] = self.model.local_metadata_dict()
         return state_dict
 
     def save_checkpoint(self, filename, extra_state):
@@ -800,14 +811,26 @@ class Trainer(object):
                 ):
                     self._check_grad_norms(grad_norm)
                 if not torch.isfinite(grad_norm).all():
-                    # check local gradnorm single GPU case, trigger NanDetector
-                    raise FloatingPointError("gradients are Nan/Inf")
+                    # in case of AMP, if gradients are Nan/Inf then
+                    # optimizer step is still required
+                    if self.cfg.common.amp:
+                        overflow = True
+                    else:
+                        # check local gradnorm single GPU case, trigger NanDetector
+                        raise FloatingPointError("gradients are Nan/Inf")
 
             with torch.autograd.profiler.record_function("optimizer"):
                 # take an optimization step
                 self.task.optimizer_step(
                     self.optimizer, model=self.model, update_num=self.get_num_updates()
                 )
+                if self.cfg.common.amp and overflow:
+                    if self._amp_retries == self.cfg.common.amp_batch_retries:
+                        logger.info("AMP: skipping this batch.")
+                        self._amp_retries = 0
+                    else:
+                        self._amp_retries += 1
+                        return self.train_step(samples, raise_oom)  # recursion to feed in same batch
 
         except FloatingPointError:
             # re-run the forward and backward pass with hooks attached to print
@@ -912,10 +935,14 @@ class Trainer(object):
                 ):
                     torch.cuda.empty_cache()
 
-        if self.cfg.common.fp16:
+        if self.cfg.common.fp16 or self.cfg.common.amp:
             metrics.log_scalar(
                 "loss_scale",
-                self.optimizer.scaler.loss_scale,
+                (
+                    self.optimizer.scaler.loss_scale
+                    if self.cfg.common.fp16
+                    else self.optimizer.scaler.get_scale()
+                ),
                 priority=700,
                 round=4,
                 weight=0,
@@ -1100,6 +1127,25 @@ class Trainer(object):
         """Aggregate training time in seconds."""
         return time.time() - self._start_time + self._previous_training_time
 
+    def _fp_convert_sample(self, sample):
+        def apply_half(t):
+            if t.dtype is torch.float32:
+                return t.to(dtype=torch.half)
+            return t
+
+        def apply_bfloat16(t):
+            if t.dtype is torch.float32:
+                return t.to(dtype=torch.bfloat16)
+            return t
+
+        if self.cfg.common.fp16:
+            sample = utils.apply_to_sample(apply_half, sample)
+
+        if self.cfg.common.bf16:
+            sample = utils.apply_to_sample(apply_bfloat16, sample)
+
+        return sample
+
     def _prepare_sample(self, sample, is_dummy=False):
         if sample == "DUMMY":
             raise Exception(
@@ -1115,33 +1161,25 @@ class Trainer(object):
             sample, _ = self._prepare_sample(self._dummy_batch, is_dummy=True)
             return sample, True
 
+        # Given that PCIe/NVLink bandwidth is significantly smaller than DRAM bandwidth
+        # it makes sense to do the format conversion on the CPU and then transfer
+        # a smaller buffer to the device. This also saves GPU memory capacity.
+
+        if self.cfg.common.on_cpu_convert_precision:
+            sample = self._fp_convert_sample(sample)
+
         if self.cuda:
             if self.pipeline_model_parallel:
-                if "target" in sample:
-                    sample["target"] = utils.move_to_cuda(
-                        sample["target"], device=self.last_device
-                    )
+                if 'target' in sample:
+                    sample['target'] = utils.move_to_cuda(sample['target'], device=self.last_device)
             else:
                 sample = utils.move_to_cuda(sample)
         elif self.tpu and is_dummy:
             # the dummy batch may not be on the appropriate device
             sample = utils.move_to_cuda(sample, device=self.device)
 
-        def apply_half(t):
-            if t.dtype is torch.float32:
-                return t.half()
-            return t
-
-        def apply_bfloat16(t):
-            if t.dtype is torch.float32:
-                return t.to(dtype=torch.bfloat16)
-            return t
-
-        if self.cfg.common.fp16:
-            sample = utils.apply_to_sample(apply_half, sample)
-
-        if self.cfg.common.bf16:
-            sample = utils.apply_to_sample(apply_bfloat16, sample)
+        if not self.cfg.common.on_cpu_convert_precision:
+            sample = self._fp_convert_sample(sample)
 
         if self._dummy_batch == "DUMMY":
             self._dummy_batch = sample
@@ -1271,8 +1309,11 @@ class Trainer(object):
             def is_consistent(tensor):
                 max_abs_diff = torch.max(torch.abs(tensor - tensor[0]))
                 return (
-                    torch.isfinite(tensor).all()
-                    and (max_abs_diff / (tensor[0] + 1e-6) < 1e-6).all()
+                    (torch.isfinite(tensor).all()
+                     and (max_abs_diff / (tensor[0] + 1e-6) < 1e-6).all())
+                    or
+                    (self.cfg.common.amp and not torch.isfinite(tensor).all())
+                    # in case of amp non-finite grads are fine
                 )
 
             if not is_consistent(self._grad_norm_buf):

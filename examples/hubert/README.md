@@ -3,11 +3,19 @@
 ## Pre-trained and fine-tuned (ASR) models
 Model | Pretraining Data | Finetuning Dataset | Model
 |---|---|---|---
-HuBERT Base | [Librispeech](http://www.openslr.org/12) 960 hr | No finetuning | [download](https://dl.fbaipublicfiles.com/hubert/hubert_base_ls960.pt)
-HuBERT Large | [Libri-Light](https://github.com/facebookresearch/libri-light) 60k hr | No finetuning | [download](https://dl.fbaipublicfiles.com/hubert/hubert_large_ll60k.pt)
+HuBERT Base (~95M params) | [Librispeech](http://www.openslr.org/12) 960 hr | No finetuning (Pretrained Model) | [download](https://dl.fbaipublicfiles.com/hubert/hubert_base_ls960.pt)
+HuBERT Large (~316M params) | [Libri-Light](https://github.com/facebookresearch/libri-light) 60k hr | No finetuning (Pretrained Model) | [download](https://dl.fbaipublicfiles.com/hubert/hubert_large_ll60k.pt)
+HuBERT Extra Large (~1B params) | [Libri-Light](https://github.com/facebookresearch/libri-light) 60k hr |  No finetuning (Pretrained Model) | [download](https://dl.fbaipublicfiles.com/hubert/hubert_xtralarge_ll60k.pt)
 HuBERT Large | [Libri-Light](https://github.com/facebookresearch/libri-light) 60k hr | [Librispeech](http://www.openslr.org/12) 960 hr | [download](https://dl.fbaipublicfiles.com/hubert/hubert_large_ll60k_finetune_ls960.pt)
-HuBERT Extra Large | [Libri-Light](https://github.com/facebookresearch/libri-light) 60k hr |  No finetuning | [download](https://dl.fbaipublicfiles.com/hubert/hubert_xtralarge_ll60k.pt)
 HuBERT Extra Large | [Libri-Light](https://github.com/facebookresearch/libri-light) 60k hr | [Librispeech](http://www.openslr.org/12) 960 hr | [download](https://dl.fbaipublicfiles.com/hubert/hubert_xtralarge_ll60k_finetune_ls960.pt)
+
+## Load a pretrained model
+```
+ckpt_path = "/path/to/the/checkpoint.pt"
+models, cfg, task = fairseq.checkpoint_utils.load_model_ensemble_and_task([ckpt_path], strict=False)
+model = models[0]
+```
+** We will follow-up with a patch such that you wouldn't need to pass `strict=False` for loading the checkpoint in future.
 
 ## Train a new model
 
@@ -64,7 +72,7 @@ Decoding results will be saved at
 `/path/to/experiment/directory/decode/viterbi/test`.
 
 ```sh
-$ python examples/speech_recognition/hydra/infer.py \
+$ python examples/speech_recognition/new/infer.py \
   --config-dir /path/to/fairseq-py/examples/hubert/config/decode \
   --config-name infer_viterbi \
   task.data=/path/to/data \
@@ -81,7 +89,7 @@ Suppose the pronunciation lexicon and the n-gram LM are saved at
 saved at `/path/to/experiment/directory/decode/kenlm/test`.
 
 ```sh
-$ python examples/speech_recognition/hydra/infer.py \
+$ python examples/speech_recognition/new/infer.py \
   --config-dir /path/to/fairseq-py/examples/hubert/config/decode \
   --config-name infer_kenlm \
   task.data=/path/to/data \

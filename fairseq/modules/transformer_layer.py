@@ -33,15 +33,16 @@ class TransformerEncoderLayer(nn.Module):
         super().__init__()
         self.args = args
         self.embed_dim = args.encoder_embed_dim
-        self.quant_noise = getattr(args, 'quant_noise_pq', 0)
-        self.quant_noise_block_size = getattr(args, 'quant_noise_pq_block_size', 8) or 8
+        self.quant_noise = getattr(args, "quant_noise_pq", 0)
+        self.quant_noise_block_size = getattr(args, "quant_noise_pq_block_size", 8) or 8
         self.self_attn = self.build_self_attention(self.embed_dim, args)
-        self.self_attn_layer_norm = LayerNorm(self.embed_dim)
+        export = getattr(args, "export", False)
+        self.self_attn_layer_norm = LayerNorm(self.embed_dim, export=export)
         self.dropout_module = FairseqDropout(
             args.dropout, module_name=self.__class__.__name__
         )
         self.activation_fn = utils.get_activation_fn(
-            activation=getattr(args, 'activation_fn', 'relu') or "relu"
+            activation=getattr(args, "activation_fn", "relu") or "relu"
         )
         activation_dropout_p = getattr(args, "activation_dropout", 0) or 0
         if activation_dropout_p == 0:
@@ -64,7 +65,7 @@ class TransformerEncoderLayer(nn.Module):
             self.quant_noise_block_size,
         )
 
-        self.final_layer_norm = LayerNorm(self.embed_dim)
+        self.final_layer_norm = LayerNorm(self.embed_dim, export=export)
 
     def build_fc1(self, input_dim, output_dim, q_noise, qn_block_size):
         return quant_noise(
@@ -103,7 +104,12 @@ class TransformerEncoderLayer(nn.Module):
                     state_dict["{}.{}.{}".format(name, new, m)] = state_dict[k]
                     del state_dict[k]
 
-    def forward(self, x, encoder_padding_mask: Optional[Tensor], attn_mask: Optional[Tensor] = None):
+    def forward(
+        self,
+        x,
+        encoder_padding_mask: Optional[Tensor],
+        attn_mask: Optional[Tensor] = None,
+    ):
         """
         Args:
             x (Tensor): input to the layer of shape `(seq_len, batch, embed_dim)`
@@ -207,10 +213,7 @@ class TransformerDecoderLayer(nn.Module):
         )
         self.normalize_before = args.decoder_normalize_before
 
-        # use layerNorm rather than FusedLayerNorm for exporting.
-        # char_inputs can be used to determint this.
-        # TODO  remove this once we update apex with the fix
-        export = getattr(args, "char_inputs", False)
+        export = getattr(args, "export", False)
         self.self_attn_layer_norm = LayerNorm(self.embed_dim, export=export)
 
         if no_encoder_attn:

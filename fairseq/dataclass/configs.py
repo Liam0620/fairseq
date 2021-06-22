@@ -148,12 +148,31 @@ class CommonConfig(FairseqDataclass):
             "help": "pct of updates that can overflow before decreasing the loss scale"
         },
     )
+    on_cpu_convert_precision: bool = field(
+        default=False,
+        metadata={
+            "help": "if set, the floating point conversion to fp16/bf16 runs on CPU. "
+            "This reduces bus transfer time and GPU memory usage."
+        }
+    )
     min_loss_scale: float = field(
         default=1e-4,
-        metadata={"help": "minimum FP16 loss scale, after which training is stopped"},
+        metadata={"help": "minimum FP16/AMP loss scale, after which training is stopped"},
     )
     threshold_loss_scale: Optional[float] = field(
         default=None, metadata={"help": "threshold FP16 loss scale from below"}
+    )
+    amp: bool = field(default=False, metadata={"help": "use automatic mixed precision"})
+    amp_batch_retries: int = field(
+        default=2,
+        metadata={"help": "number of retries of same batch after reducing loss scale with AMP"},
+    )
+    amp_init_scale: int = field(
+        default=2 ** 7, metadata={"help": "default AMP loss scale"}
+    )
+    amp_scale_window: Optional[int] = field(
+        default=None,
+        metadata={"help": "number of updates before increasing AMP loss scale"},
     )
     user_dir: Optional[str] = field(
         default=None,
@@ -208,6 +227,12 @@ class DistributedTrainingConfig(FairseqDataclass):
         default=max(1, torch.cuda.device_count()),
         metadata={
             "help": "total number of GPUs across all nodes (default: all visible GPUs)"
+        },
+    )
+    distributed_num_procs: Optional[int] = field(
+        default=max(1, torch.cuda.device_count()),
+        metadata={
+            "help": "total number of processes to fork (default: all visible GPUs)"
         },
     )
     distributed_rank: Optional[int] = field(
