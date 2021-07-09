@@ -485,7 +485,7 @@ class Trainer(object):
                     last_optim_state = state.get("last_optimizer_state", None)
 
             # load model parameters
-            try:
+            try: #modified by mli 20210708
                 self.model.load_state_dict(
                     state["model"], strict=True, model_cfg=self.cfg.model
                 )

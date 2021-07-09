@@ -561,7 +561,6 @@ def create_HLG(
     prefix: str = "HLG",
 ) -> Path:
     hlg_graph = fst_dir / f"{prefix}.{unique_label}.fst"
-
     if not hlg_graph.exists():
         logger.info(f"Creating {hlg_graph}")
 
@@ -586,7 +585,7 @@ def create_HLG(
                         "-o",
                         add_self_loop,
                     ],
-                    check=True,
+                    check=True, #check=True
                 )
 
             my_env = os.environ.copy()

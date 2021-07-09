@@ -1,7 +1,7 @@
 # @package _group_
 
 common:
-  fp16: true
+  fp16: False
   log_format: json
   log_interval: 200
 
@@ -11,35 +11,32 @@ checkpoint:
   no_epoch_checkpoints: true
 
 task:
-  _name: audio_pretraining
+  _name: audio_pretraining_mtl
   data: ???
   max_sample_size: 320000
   min_sample_size: 32000
   normalize: true
-
-#task:
-#  _name: audio_pretraining_mtl
-#  data: ???
-#  max_sample_size: 320000
-#  min_sample_size: 32000
-#  normalize: true
-#  labels: ltr
-#  dataset_sampling_alpha: 0.5
+  labels: ltr
+  dataset_sampling_alpha: 0.5
 
 dataset:
   num_workers: 6
   max_tokens: 1200000
   skip_invalid_size_inputs_valid_test: true
+  valid_subset: valid
 
 distributed_training:
   distributed_world_size: 128
   ddp_backend: legacy_ddp
 
 criterion:
-  _name: wav2vec
+  _name: unispeech
   infonce: true
   log_keys: ["prob_perplexity","code_perplexity","temp"]
   loss_weights: [0.1, 0]
+  zero_infinity: true
+  sentence_avg: False
+  mtlalpha: 0.5
 
 optimization:
   max_update: 1000000
@@ -56,7 +53,8 @@ lr_scheduler:
   warmup_updates: 32000
 
 model:
-  _name: wav2vec2
+  _name: unispeech
+  w2v_path: ???
   quantize_targets: true
   extractor_mode: layer_norm
   layer_norm_first: true
@@ -75,4 +73,8 @@ model:
   encoder_attention_heads: 16
 
   feature_grad_mult: 1.0
+
+  replace_prob: 0.5
+  pretrain_mode: True
+  apply_mask: True
 

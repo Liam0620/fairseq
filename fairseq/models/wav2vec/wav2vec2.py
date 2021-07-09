@@ -3,6 +3,7 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
+import sys
 import math
 from dataclasses import dataclass, field
 from typing import List, Tuple
@@ -334,6 +335,7 @@ class Wav2Vec2Model(BaseFairseqModel):
             )
 
         self.final_proj = nn.Linear(cfg.encoder_embed_dim, final_dim)
+        # self.q2h_proj = nn.Linear(final_dim, cfg.encoder_embed_dim)
 
     def upgrade_state_dict_named(self, state_dict, name):
         super().upgrade_state_dict_named(state_dict, name)
@@ -608,6 +610,12 @@ class Wav2Vec2Model(BaseFairseqModel):
                 "features": unmasked_features,
                 "layer_results": layer_results,
             }
+        x = self.final_proj(x)
+        result = {
+            "features": x,
+            # "feautres_padding_mask": padding_mask,
+            # "layer_results": layer_results,
+        }
 
         if self.quantizer:
             q = self.quantizer(y, produce_targets=False)
@@ -619,10 +627,12 @@ class Wav2Vec2Model(BaseFairseqModel):
 
             y = self.project_q(y)
 
+            q_unmasked = self.quantizer(unmasked_features, produce_targets=False)
+            quant_features = q_unmasked["x"]
+            # quant_features = self.q2h_proj(q_unmasked["x"])
             if self.negatives_from_everywhere:
-                neg_cands = self.quantizer(unmasked_features, produce_targets=False)[
-                    "x"
-                ]
+                # neg_cands = self.quantizer(unmasked_features, produce_targets=False)["x"]
+                neg_cands = q_unmasked["x"]
                 negs, _ = self.sample_negatives(
                     neg_cands,
                     y.size(1),
@@ -662,7 +672,6 @@ class Wav2Vec2Model(BaseFairseqModel):
                     y.size(1),
                     padding_count=padding_count,
                 )
-
         if not is_xla_tensor(x):
             # tpu-comment: reducing the size in a dynamic way causes
             # too many recompilations on xla.
@@ -672,14 +681,19 @@ class Wav2Vec2Model(BaseFairseqModel):
             y = self.target_glu(y)
             negs = self.target_glu(negs)
 
-        x = self.final_proj(x)
+        # x = self.final_proj(x)
         x = self.compute_preds(x, y, negs)
+        result["x"] = x
+        result["padding_mask"] = padding_mask
+        result["features_pen"] = features_pen
+        result["quant_features"] = quant_features
 
-        result = {
-            "x": x,
-            "padding_mask": padding_mask,
-            "features_pen": features_pen,
-        }
+        # result = {
+        #     "x": x,
+        #     "padding_mask": padding_mask,
+        #     "features_pen": features_pen,
+        #     "quant_features":quant_features,
+        # }
 
         if prob_ppl is not None:
             result["prob_perplexity"] = prob_ppl
@@ -731,6 +745,7 @@ class Wav2Vec2Model(BaseFairseqModel):
         self.project_q = None
         self.target_glu = None
         self.final_proj = None
+        self.q2h_proj = None
 
 
 class ConvFeatureExtractionModel(nn.Module):

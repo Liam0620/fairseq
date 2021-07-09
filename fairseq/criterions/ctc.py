@@ -106,8 +106,7 @@ class CtcCriterion(FairseqCriterion):
         self.zero_infinity = cfg.zero_infinity
         self.sentence_avg = cfg.sentence_avg
 
-    def forward(self, model, sample, reduce=True):
-        net_output = model(**sample["net_input"])
+    def get_loss(self, model, sample, net_output, reduce=True):
         lprobs = model.get_normalized_probs(
             net_output, log_probs=True
         ).contiguous()  # (T, B, C) from the encoder
@@ -124,7 +123,7 @@ class CtcCriterion(FairseqCriterion):
                 )
 
         pad_mask = (sample["target"] != self.pad_idx) & (
-            sample["target"] != self.eos_idx
+                sample["target"] != self.eos_idx
         )
         targets_flat = sample["target"].masked_select(pad_mask)
         if "target_lengths" in sample:
@@ -167,11 +166,11 @@ class CtcCriterion(FairseqCriterion):
                 w_len = 0
                 wv_errs = 0
                 for lp, t, inp_l in zip(
-                    lprobs_t,
-                    sample["target_label"]
-                    if "target_label" in sample
-                    else sample["target"],
-                    input_lengths,
+                        lprobs_t,
+                        sample["target_label"]
+                        if "target_label" in sample
+                        else sample["target"],
+                        input_lengths,
                 ):
                     lp = lp[:inp_l].unsqueeze(0)
 
@@ -188,7 +187,7 @@ class CtcCriterion(FairseqCriterion):
                                 decoded = decoded[0]
 
                     p = (t != self.task.target_dictionary.pad()) & (
-                        t != self.task.target_dictionary.eos()
+                            t != self.task.target_dictionary.eos()
                     )
                     targ = t[p]
                     targ_units = self.task.target_dictionary.string(targ)
@@ -221,7 +220,11 @@ class CtcCriterion(FairseqCriterion):
                 logging_output["w_total"] = w_len
                 logging_output["c_errors"] = c_err
                 logging_output["c_total"] = c_len
+        return loss, sample_size, logging_output
 
+    def forward(self, model, sample, reduce=True):
+        net_output = model(**sample["net_input"])
+        loss, sample_size, logging_output = self.get_loss(model, sample, net_output, reduce=True)
         return loss, sample_size, logging_output
 
     @staticmethod

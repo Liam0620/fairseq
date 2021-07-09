@@ -17,31 +17,38 @@ Pre-requisites:
 * set RVAD_ROOT environmental variable to a checkout of [rVADfast](https://github.com/zhenghuatan/rVADfast)
 * set KENLM_ROOT environmental variable to the location of [KenLM](https://github.com/kpu/kenlm) binaries
 * install [PyKaldi](https://github.com/pykaldi/pykaldi) and set KALDI_ROOT environmental variable to the location of your kaldi installation. To use the version bundled with PyKaldi, you can use /path/to/pykaldi/tools/kaldi
-
+* install [phonemizer](https://github.com/bootphon/phonemizer)
+* install [fasttext](https://github.com/facebookresearch/fastText)
+```shell
+export FAIRSEQ_ROOT=/data3/mli2/mli/fairseq_latest &&
+export RVAD_ROOT=/data3/mli2/mli/fairseq_latest/examples/wav2vec/unsupervised/rVAD/rVADfast_py_2.0 &&
+export KENLM_ROOT=/data3/mli2/work/kenlm/build/bin &&
+export KALDI_ROOT=/data3/mli2/work/pykaldi/tools/kaldi
+```
 Create new audio files without silences:
 ```shell
 # create a manifest file for the set original of audio files
 python $FAIRSEQ_ROOT/examples/wav2vec/wav2vec_manifest.py /dir/to/save/audio/files --ext wav --dest /path/to/new/train.tsv --valid-percent 0
 
-python scripts/vads.py -r $RVAD_ROOT < /path/to/train.tsv > train.vads
+python scripts/vads.py -r $RVAD_ROOT < $FAIRSEQ_ROOT/examples/wav2vec/unsupervised/raw_manifest_path/train.tsv > $FAIRSEQ_ROOT/examples/wav2vec/unsupervised/raw_manifest_path/train.vads
 
-python scripts/remove_silence.py --tsv /path/to/train.tsv --vads train.vads --out /dir/to/save/audio/files
-
-python $FAIRSEQ_ROOT/examples/wav2vec/wav2vec_manifest.py /dir/to/save/audio/files --ext wav --dest /path/to/new/train.tsv --valid-percent 0.01
+python scripts/remove_silence.py --tsv $FAIRSEQ_ROOT/examples/wav2vec/unsupervised/raw_manifest_path/train.tsv --vads $FAIRSEQ_ROOT/examples/wav2vec/unsupervised/raw_manifest_path/train.vads --out $FAIRSEQ_ROOT/examples/wav2vec/unsupervised/raw_manifest_path/audio_files/
 ```
 
 Next, we need to preprocess the audio data to better match phonemized text data:
 
 ```shell
 zsh scripts/prepare_audio.sh /dir/with/{train,test,valid}.tsv /output/dir /path/to/wav2vec2/model.pt 512 14
+zsh scripts/prepare_audio.sh $FAIRSEQ_ROOT/examples/wav2vec/unsupervised/raw_manifest_path $FAIRSEQ_ROOT/examples/wav2vec/unsupervised/raw_manifest_path/prepare_audio $FAIRSEQ_ROOT/examples/wav2vec/pretrained_models/xlsr_53_56k.pt 512 14
+
 ```
 Note that if you have splits different than train/valid/test, you will need to modify this script. The last two arguments are the PCA dimensionality and the 0-based index of the layer from which to extract representations.
 
 Now we need to prepare text data:
 ```shell
 zsh scripts/prepare_text.sh language /path/to/text/file /output/dir 1000 espeak /path/to/fasttext/lid/model
+zsh scripts/prepare_text.sh en $FAIRSEQ_ROOT/examples/wav2vec/pretrained_models/text/librispeech-train.txt $FAIRSEQ_ROOT/examples/wav2vec/unsupervised/raw_manifest_path/prepare_text 1000 espeak $FAIRSEQ_ROOT/examples/wav2vec/pretrained_models/fasttext/lid.176.bin
 ```
-
 The fourth argument is minimum number observations of phones to keep. If your text corpus is small, you might want to reduce this number.
 
 The fifth argument is which phonemizer to use. Supported values are [espeak](http://espeak.sourceforge.net/), [espeak-ng](https://github.com/espeak-ng/espeak-ng), and [G2P](https://github.com/Kyubyong/g2p) (english only).
@@ -66,11 +73,11 @@ Launching GAN training on top of preprocessed features, with default hyperparame
 
 ```
 PREFIX=w2v_unsup_gan_xp
-TASK_DATA=/path/to/features/precompute_unfiltered_pca512_cls128_mean_pooled  
-TEXT_DATA=/path/to/data/phones  # path to fairseq-preprocessed GAN data (phones dir)
-KENLM_PATH=/path/to/data/phones/kenlm.phn.o4.bin  # KenLM 4-gram phoneme language model (LM data = GAN data here)
+TASK_DATA=$FAIRSEQ_ROOT/examples/wav2vec/unsupervised/raw_manifest_path/prepare_audio/precompute_pca512_cls128_mean_pooled  #precompute_unfiltered_pca512_cls128_mean_pooled  
+TEXT_DATA=$FAIRSEQ_ROOT/examples/wav2vec/unsupervised/raw_manifest_path/prepare_text_new/phones  # path to fairseq-preprocessed GAN data (phones dir)
+KENLM_PATH=$FAIRSEQ_ROOT/examples/wav2vec/unsupervised/raw_manifest_path/prepare_text_new/phones/lm.phones.filtered.04.bin   #kenlm.phn.o4.bin  # KenLM 4-gram phoneme language model (LM data = GAN data here)
 
-PYTHONPATH=$FAIRSEQ_ROOT PREFIX=$PREFIX fairseq-hydra-train \
+PYTHONPATH=$FAIRSEQ_ROOT PREFIX=$PREFIX CUDA_VISIBLE_DEVICES=3 screen -L fairseq-hydra-train \
     -m --config-dir config/gan \
     --config-name w2vu \
     task.data=${TASK_DATA} \

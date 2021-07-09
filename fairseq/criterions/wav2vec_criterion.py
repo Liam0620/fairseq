@@ -3,6 +3,7 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
+import sys
 import math
 from dataclasses import dataclass, field
 from typing import List, Optional
@@ -41,15 +42,7 @@ class Wav2vecCriterion(FairseqCriterion):
         self.loss_weights = loss_weights
         self.log_keys = [] if log_keys is None else log_keys
 
-    def forward(self, model, sample, reduce=True):
-        """Compute the loss for the given sample.
-
-        Returns a tuple with three elements:
-        1) the loss
-        2) the sample size, which is used as the denominator for the gradient
-        3) logging outputs to display while training
-        """
-        net_output = model(**sample["net_input"])
+    def get_loss(self,model, sample, net_output, reduce=True):
         logits = model.get_logits(net_output).float()
         target = model.get_targets(sample, net_output)
         self.xla = is_xla_tensor(logits)
@@ -77,8 +70,8 @@ class Wav2vecCriterion(FairseqCriterion):
             # Instead, we use mask indices to adjust loss.
             mi = (
                 sample['net_input']['mask_indices']
-                .transpose(0, 1)  # logits are transposed in `model.get_logits`
-                .reshape(logits.size(0))
+                    .transpose(0, 1)  # logits are transposed in `model.get_logits`
+                    .reshape(logits.size(0))
             )
             loss = (loss * mi).sum() if reduce else (loss * mi)
 
@@ -160,6 +153,20 @@ class Wav2vecCriterion(FairseqCriterion):
                 logging_output["correct"] = corr
                 logging_output["count"] = count
 
+        return loss, sample_size, logging_output
+
+    def forward(self, model, sample, reduce=True):
+        """Compute the loss for the given sample.
+
+        Returns a tuple with three elements:
+        1) the loss
+        2) the sample size, which is used as the denominator for the gradient
+        3) logging outputs to display while training
+        """
+        net_output = model(**sample["net_input"])
+        loss, sample_size, logging_output = self.get_loss( model, sample, net_output, reduce=True)
+        # print(111111,loss/sample_size / math.log(2),loss,sample_size)
+        # sys.exit()
         return loss, sample_size, logging_output
 
     @staticmethod
