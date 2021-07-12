@@ -225,4 +225,4 @@ class UnispeechCriterion(FairseqCriterion):
         """
         # XXX: Gather based reduction not implemented for xla yet.
         # So we fall to sum based reduction for xla.
-        return self.xla
+        return False
