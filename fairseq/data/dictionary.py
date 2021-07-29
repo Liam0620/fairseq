@@ -26,15 +26,18 @@ class Dictionary:
         eos="</s>",
         unk="<unk>",
         extra_special_symbols=None,
+        from_tokenizer=False,
     ):
         self.bos_word, self.unk_word, self.pad_word, self.eos_word = bos, unk, pad, eos
         self.symbols = []
         self.count = []
         self.indices = {}
-        self.bos_index = self.add_symbol(bos)
-        self.pad_index = self.add_symbol(pad)
-        self.eos_index = self.add_symbol(eos)
-        self.unk_index = self.add_symbol(unk)
+        if not from_tokenizer:
+            self.bos_index = self.add_symbol(bos)
+            self.pad_index = self.add_symbol(pad)
+            self.eos_index = self.add_symbol(eos)
+            self.unk_index = self.add_symbol(unk)
+
         if extra_special_symbols:
             for s in extra_special_symbols:
                 self.add_symbol(s)

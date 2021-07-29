@@ -806,3 +806,23 @@ def reset_logging():
         )
     )
     root.addHandler(handler)
+
+def sequence_mask(lengths, maxlen=None, depth=None, dtype=torch.float, reverse=False):
+    if maxlen is None:
+        maxlen = lengths.max()
+    mask = torch.ones((len(lengths), maxlen),
+                      device=lengths.device,
+                      dtype=torch.uint8).cumsum(dim=1) <= lengths.unsqueeze(0).t()
+    if depth:
+        mask = mask.unsqueeze(-1).repeat(1, 1, depth)
+
+    mask = mask.type(dtype)
+
+    if reverse:
+        if dtype == torch.bool:
+            mask = ~mask
+        else:
+            mask = 1 - mask
+
+    return mask
+

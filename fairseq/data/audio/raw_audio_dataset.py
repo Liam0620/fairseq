@@ -8,6 +8,7 @@ import logging
 import os
 import sys
 import io
+import random
 
 import numpy as np
 import torch
@@ -21,6 +22,9 @@ from fairseq.data.audio.audio_utils import (
     is_sf_audio_data,
 )
 
+from fairseq.data.data_augment.speech_perturb import SpeedPerturb
+from fairseq.data.data_augment.asr_data_noise_rir import add_noise_rir
+from fairseq.data.data_augment.volume_perturb import volume_perturb
 
 logger = logging.getLogger(__name__)
 
@@ -249,6 +253,8 @@ class FileAudioDataset(RawAudioDataset):
         self,
         manifest_path,
         sample_rate,
+        noise_path=None,
+        rir_path=None,
         max_sample_size=None,
         min_sample_size=0,
         shuffle=True,
@@ -273,6 +279,19 @@ class FileAudioDataset(RawAudioDataset):
         self.fnames = []
         sizes = []
         self.skipped_indices = set()
+
+        self.augment = False
+        if noise_path is not None and rir_path is not None:
+            self.augment = True
+            self.noises = []
+            self.rirs = []
+            with open(noise_path, "r") as f_noise, open(rir_path, "r") as f_rir:
+                self.root_noise = f_noise.readline().strip()
+                self.root_rir = f_rir.readline().strip()
+                for i, line in enumerate(f_noise):
+                    self.noises.append(line.strip())
+                for i, line in enumerate(f_rir):
+                    self.rirs.append(line.strip())
 
         with open(manifest_path, "r") as f:
             self.root_dir = f.readline().strip()
@@ -304,7 +323,6 @@ class FileAudioDataset(RawAudioDataset):
 
     def __getitem__(self, index):
         import soundfile as sf
-
         path_or_fp = os.path.join(self.root_dir, str(self.fnames[index]))
         _path, slice_ptr = parse_path(path_or_fp)
         if len(slice_ptr) == 2:
@@ -313,9 +331,20 @@ class FileAudioDataset(RawAudioDataset):
             path_or_fp = io.BytesIO(byte_data)
 
         wav, curr_sample_rate = sf.read(path_or_fp, dtype="float32")
+        if self.augment:
+            rand_noise_path = os.path.join(self.root_noise, random.choice(self.noises))
+            rand_rir_path = os.path.join(self.root_rir, random.choice(self.rirs))
+            samples = add_noise_rir(path_or_fp, rand_noise_path, rand_rir_path)
+            sp = SpeedPerturb()
+            samples = torch.tensor(samples)
+            samples = samples.unsqueeze(0)
+            out = sp(samples)
+            out = volume_perturb(out).squeeze(0)
+            feats = self.postprocess(out, curr_sample_rate)
+        else:
+            feats = torch.from_numpy(wav).float()
+            feats = self.postprocess(feats, curr_sample_rate)
 
-        feats = torch.from_numpy(wav).float()
-        feats = self.postprocess(feats, curr_sample_rate)
         return {"id": index, "source": feats}
 
 

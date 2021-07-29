@@ -10,6 +10,10 @@ from .fairseq_dataset import FairseqDataset, FairseqIterableDataset
 
 from .base_wrapper_dataset import BaseWrapperDataset
 
+from .data_augment.speech_perturb import SpeedPerturb
+from .data_augment.asr_data_noise_rir import add_noise_rir
+from .data_augment.volume_perturb import volume_perturb
+
 from .add_target_dataset import AddTargetDataset
 from .append_token_dataset import AppendTokenDataset
 from .audio.raw_audio_dataset import BinarizedAudioDataset, FileAudioDataset

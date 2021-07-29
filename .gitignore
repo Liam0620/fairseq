@@ -33,6 +33,10 @@ wheels/
 
 # Checkpoints
 checkpoints
+expriments
+manifest
+examples/wav2vec/pretrained_models/xlsr_53_56k.pt
+*pretrained_models*
 
 # PyInstaller
 #  Usually these files are written by a python script from a template

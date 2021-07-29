@@ -7,3 +7,5 @@ from .wav2vec import *  # noqa
 from .wav2vec2 import *  # noqa
 from .wav2vec2_asr import *  # noqa
 from .unispeech import *
+from .wav2vec2_asr_cif_gpt import *
+from .wav2vec2_cif import *
