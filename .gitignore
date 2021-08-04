@@ -35,6 +35,7 @@ wheels/
 checkpoints
 expriments
 manifest
+outputs
 examples/wav2vec/pretrained_models/xlsr_53_56k.pt
 *pretrained_models*
 

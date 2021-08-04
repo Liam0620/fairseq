@@ -96,7 +96,7 @@ def resize(alphas, target_lengths, threshold=THRESHOLD):
 
     # rm attention value that exceeds threashold
     while len(torch.where(_alphas > threshold)[0]):
-        print('fixing alpha')
+        # print('fixing alpha')
         xs, ys = torch.where(_alphas > threshold)
         for x, y in zip(xs, ys):
             if _alphas[x][y] >= threshold:

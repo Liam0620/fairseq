@@ -187,6 +187,29 @@ def add_noise_rir(wav_path, noise_path, rir_path):
     out = out[:,0]
     return out
 
+class NoiseRIR_Dataset():
+    def __init__(self,noise_path,rir_path,low_snr,high_snr):
+        super().__init__()
+
+        self.low_snr = low_snr
+        self.high_snr = high_snr
+        self.noises = []
+        self.rirs = []
+        with open(noise_path, "r") as f_noise, open(rir_path, "r") as f_rir:
+            self.root_noise = f_noise.readline().strip()
+            self.root_rir = f_rir.readline().strip()
+            for i, line in enumerate(f_noise):
+                self.noises.append(line.strip())
+            for i, line in enumerate(f_rir):
+                self.rirs.append(line.strip())
+
+    def add_noise_rir(self,wav_path):
+        rand_noise_path = os.path.join(self.root_noise, random.choice(self.noises))
+        rand_rir_path = os.path.join(self.root_rir, random.choice(self.rirs))
+        snr = random.uniform(self.low_snr, self.high_snr)
+        out, spk1, spk2 = mixwav(wav_path, rand_noise_path, rand_rir_path, snr)
+        out = out[:, 0]
+        return out
 
 if __name__ == '__main__':
     num_process = 50

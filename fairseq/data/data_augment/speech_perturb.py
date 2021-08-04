@@ -80,7 +80,7 @@ class SpeedPerturb(nn.Module):
         perturb: speed perturb factors
     """
 
-    def __init__(self, sr: int = 16000, perturb: str = "0.9,1.0,1.1") -> None:
+    def __init__(self, sr: int = 16000, perturb: str = "0.9,1.1") -> None:
         super(SpeedPerturb, self).__init__()
         self.sr = sr
         self.factor_str = perturb
@@ -117,18 +117,27 @@ class SpeedPerturb(nn.Module):
         Return:
             wav (Tensor): output signal, N x ... x S
         """
+        if wav.dim() == 1:
+            wav = wav.unsqueeze(0)
+
         self.last_weight = None
         if not self.training:
-            return wav
+            return wav.squeeze(0)
 #         if wav.dim() != 2:
 #             raise RuntimeError(f"Now only supports 2D tensor, got {wav.dim()}")
         # 1.0, do not apply speed perturb
-        choice = th.randint(0, len(self.weights) + 1, (1,)).item()
-        if choice == len(self.weights):
-            return wav
-        else:
-            self.last_weight = self.weights[choice]
-            return perturb_speed(wav, self.last_weight)
+        # choice = th.randint(0, len(self.weights) + 1, (1,)).item()
+        # choice = 0
+        # if choice == len(self.weights):
+        #     return wav.squeeze(0)
+        # else:
+        #     self.last_weight = self.weights[choice]
+        #     return perturb_speed(wav, self.last_weight).squeeze(0)
+        choice = th.randint(0, len(self.weights), (1,)).item()
+        self.last_weight = self.weights[choice]
+        return perturb_speed(wav, self.last_weight).squeeze(0)
+
+
 
 
     

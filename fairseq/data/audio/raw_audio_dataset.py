@@ -9,6 +9,7 @@ import os
 import sys
 import io
 import random
+import soundfile as sf
 
 import numpy as np
 import torch
@@ -23,7 +24,7 @@ from fairseq.data.audio.audio_utils import (
 )
 
 from fairseq.data.data_augment.speech_perturb import SpeedPerturb
-from fairseq.data.data_augment.asr_data_noise_rir import add_noise_rir
+from fairseq.data.data_augment.asr_data_noise_rir import NoiseRIR_Dataset
 from fairseq.data.data_augment.volume_perturb import volume_perturb
 
 logger = logging.getLogger(__name__)
@@ -253,8 +254,6 @@ class FileAudioDataset(RawAudioDataset):
         self,
         manifest_path,
         sample_rate,
-        noise_path=None,
-        rir_path=None,
         max_sample_size=None,
         min_sample_size=0,
         shuffle=True,
@@ -279,19 +278,6 @@ class FileAudioDataset(RawAudioDataset):
         self.fnames = []
         sizes = []
         self.skipped_indices = set()
-
-        self.augment = False
-        if noise_path is not None and rir_path is not None:
-            self.augment = True
-            self.noises = []
-            self.rirs = []
-            with open(noise_path, "r") as f_noise, open(rir_path, "r") as f_rir:
-                self.root_noise = f_noise.readline().strip()
-                self.root_rir = f_rir.readline().strip()
-                for i, line in enumerate(f_noise):
-                    self.noises.append(line.strip())
-                for i, line in enumerate(f_rir):
-                    self.rirs.append(line.strip())
 
         with open(manifest_path, "r") as f:
             self.root_dir = f.readline().strip()
@@ -321,6 +307,21 @@ class FileAudioDataset(RawAudioDataset):
 
         self.set_bucket_info(num_buckets)
 
+        # data augment
+        self.noise_rir_prob = 0
+        self.speed_perturb_prob = 0
+        self.volume_perturb_prob = 0
+        self.noise_rir_dataset = NoiseRIR_Dataset( '/workspace/fairseq/manifest/augmentation/noises.txt',
+                                                   '/workspace/fairseq/manifest/augmentation/rirs.txt',
+                                                   low_snr=5,high_snr=20)
+        self.sp = SpeedPerturb(sr= sample_rate, perturb= "0.9,1.0,1.1")
+        self.is_save = True
+        self.is_save_path = "/workspace/fairseq/manifest/augmentation/save"
+
+    def save_to_wav(self,feats,path):
+        out = feats.numpy()
+        sf.write(path, out, self.sample_rate)
+
     def __getitem__(self, index):
         import soundfile as sf
         path_or_fp = os.path.join(self.root_dir, str(self.fnames[index]))
@@ -330,20 +331,28 @@ class FileAudioDataset(RawAudioDataset):
             assert is_sf_audio_data(byte_data)
             path_or_fp = io.BytesIO(byte_data)
 
-        wav, curr_sample_rate = sf.read(path_or_fp, dtype="float32")
-        if self.augment:
-            rand_noise_path = os.path.join(self.root_noise, random.choice(self.noises))
-            rand_rir_path = os.path.join(self.root_rir, random.choice(self.rirs))
-            samples = add_noise_rir(path_or_fp, rand_noise_path, rand_rir_path)
-            sp = SpeedPerturb()
-            samples = torch.tensor(samples)
-            samples = samples.unsqueeze(0)
-            out = sp(samples)
-            out = volume_perturb(out).squeeze(0)
-            feats = self.postprocess(out, curr_sample_rate)
+
+        if random.random()<self.noise_rir_prob:
+            wav = self.noise_rir_dataset.add_noise_rir(path_or_fp)
+            curr_sample_rate = self.sample_rate
         else:
-            feats = torch.from_numpy(wav).float()
-            feats = self.postprocess(feats, curr_sample_rate)
+            wav, curr_sample_rate = sf.read(path_or_fp, dtype="float32")
+
+        feats = torch.from_numpy(wav).float()
+        feats = self.postprocess(feats, curr_sample_rate)
+
+        if random.random()<self.speed_perturb_prob:
+            feats = self.sp(feats)
+
+        if random.random()<self.volume_perturb_prob:
+            feats = volume_perturb(feats)
+
+        if self.is_save:
+            save_path = os.path.join(self.is_save_path,_path.split('/')[-1].split('.')[0])+'_augtment.wav'
+            self.save_to_wav(feats, save_path)
+            print(3213123,save_path,feats.size())
+            sys.exit()
+
 
         return {"id": index, "source": feats}
 

@@ -196,13 +196,7 @@ class AudioPretrainingTask(FairseqTask):
     def load_dataset(self, split: str, task_cfg: FairseqDataclass = None, **kwargs):
         data_path = self.cfg.data
         task_cfg = task_cfg or self.cfg
-        if getattr(task_cfg, "augment_data", False):
-            noise_path = os.path.join(task_cfg.augment_data, "noises.txt")
-            rir_path = os.path.join(task_cfg.augment_data, "rirs.txt")
-        else:
-            noise_path = None
-            rir_path = None
-            
+
         # upgrade old task
         if isinstance(task_cfg, Namespace):
             if not hasattr(task_cfg, "autoregressive"):
@@ -226,8 +220,6 @@ class AudioPretrainingTask(FairseqTask):
 
             self.datasets[split] = FileAudioDataset(
                 manifest_path=manifest_path,
-                noise_path=noise_path,
-                rir_path=rir_path,
                 sample_rate=task_cfg.get("sample_rate", self.cfg.sample_rate),
                 max_sample_size=self.cfg.max_sample_size,
                 min_sample_size=self.cfg.min_sample_size,

@@ -125,10 +125,13 @@ class CIF_GPT2_Criterion(FairseqCriterion):
         net_output = model(**sample)
 
         ctc_loss, sample_size, ctc_logging_output = self.ctc_criterion.get_loss(model, sample, net_output, reduce)
-        cif_loss,lprobs = self.cif_loss(model,sample,net_output,reduce)
-        qua_loss = self.quantity_loss(sample,net_output)
-        embedding_loss = self.embedding_loss(net_output)
-        loss = self.cfg.lambda_ctc*ctc_loss + self.cfg.lambda_cif*cif_loss + self.cfg.lambda_qua*qua_loss + self.cfg.lambda_emb*embedding_loss
+        if model.training:
+            cif_loss,lprobs = self.cif_loss(model,sample,net_output,reduce)
+            qua_loss = self.quantity_loss(sample,net_output)
+            embedding_loss = self.embedding_loss(net_output)
+            loss = self.cfg.lambda_ctc*ctc_loss + self.cfg.lambda_cif*cif_loss + self.cfg.lambda_qua*qua_loss + self.cfg.lambda_emb*embedding_loss
+        else:
+            loss = cif_loss = qua_loss = ctc_loss = embedding_loss = 0
 
         mask = sample["target"] != self.padding_idx
 
@@ -246,7 +249,7 @@ class CIF_GPT2_Criterion(FairseqCriterion):
         """
         # XXX: Gather based reduction not implemented for xla yet.
         # So we fall to sum based reduction for xla.
-        return True
+        return False
 
 
 # Custom Contrastive Loss
