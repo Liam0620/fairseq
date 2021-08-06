@@ -24,15 +24,15 @@ sp = SpeedPerturb(sr= 16000, perturb= "0.9,1.1")
 # pdb.set_trace()
 samples = th.tensor(samples)
 
-samples = samples.unsqueeze(0)
-print(33333,samples.size())
+# samples = samples.unsqueeze(0)
+# print(33333,samples.size())
 # input a 2-D tensor
 out = sp(samples)
 print(31233434,out.size())
 # add volume perturb
 out = volume_perturb(out,low=-1.6,high=1.6)
 # print(3213123,out)
-# print(4444,out.size())
+print(4444,out.size())
 print('done!')
 
 

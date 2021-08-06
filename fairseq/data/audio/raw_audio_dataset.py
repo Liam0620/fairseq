@@ -261,6 +261,17 @@ class FileAudioDataset(RawAudioDataset):
         normalize=False,
         num_buckets=0,
         compute_mask_indices=False,
+        noise_rir_prob=0,
+        speed_perturb_prob=0,
+        volume_perturb_prob=0,
+        noise_path='/workspace/fairseq/manifest/augmentation/noises.txt',
+        rir_path='/workspace/fairseq/manifest/augmentation/rirs.txt',
+        low_snr=5,
+        high_snr=20,
+        purturb="0.9,1.1",
+        is_save=True,
+        is_save_path = "/workspace/fairseq/manifest/augmentation/save",
+        is_training=True,
         **mask_compute_kwargs,
     ):
         super().__init__(
@@ -308,15 +319,16 @@ class FileAudioDataset(RawAudioDataset):
         self.set_bucket_info(num_buckets)
 
         # data augment
-        self.noise_rir_prob = 0
-        self.speed_perturb_prob = 0
-        self.volume_perturb_prob = 0
-        self.noise_rir_dataset = NoiseRIR_Dataset( '/workspace/fairseq/manifest/augmentation/noises.txt',
-                                                   '/workspace/fairseq/manifest/augmentation/rirs.txt',
-                                                   low_snr=5,high_snr=20)
-        self.sp = SpeedPerturb(sr= sample_rate, perturb= "0.9,1.0,1.1")
-        self.is_save = True
-        self.is_save_path = "/workspace/fairseq/manifest/augmentation/save"
+        self.noise_rir_prob = noise_rir_prob
+        self.speed_perturb_prob = speed_perturb_prob
+        self.volume_perturb_prob = volume_perturb_prob
+        self.noise_rir_dataset = NoiseRIR_Dataset( noise_path,
+                                                   rir_path,
+                                                   low_snr=low_snr,high_snr=high_snr)
+        self.sp = SpeedPerturb(sr= sample_rate, perturb= purturb)
+        self.is_save = is_save
+        self.is_save_path = is_save_path
+        self.is_training = is_training
 
     def save_to_wav(self,feats,path):
         out = feats.numpy()
@@ -332,7 +344,7 @@ class FileAudioDataset(RawAudioDataset):
             path_or_fp = io.BytesIO(byte_data)
 
 
-        if random.random()<self.noise_rir_prob:
+        if random.random()<self.noise_rir_prob and self.is_training:
             wav = self.noise_rir_dataset.add_noise_rir(path_or_fp)
             curr_sample_rate = self.sample_rate
         else:
@@ -341,17 +353,15 @@ class FileAudioDataset(RawAudioDataset):
         feats = torch.from_numpy(wav).float()
         feats = self.postprocess(feats, curr_sample_rate)
 
-        if random.random()<self.speed_perturb_prob:
+        if random.random()<self.speed_perturb_prob and self.is_training:
             feats = self.sp(feats)
 
-        if random.random()<self.volume_perturb_prob:
+        if random.random()<self.volume_perturb_prob and self.is_training:
             feats = volume_perturb(feats)
 
         if self.is_save:
             save_path = os.path.join(self.is_save_path,_path.split('/')[-1].split('.')[0])+'_augtment.wav'
             self.save_to_wav(feats, save_path)
-            print(3213123,save_path,feats.size())
-            sys.exit()
 
 
         return {"id": index, "source": feats}
