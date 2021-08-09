@@ -264,13 +264,13 @@ class FileAudioDataset(RawAudioDataset):
         noise_rir_prob=0,
         speed_perturb_prob=0,
         volume_perturb_prob=0,
-        noise_path='/workspace/fairseq/manifest/augmentation/noises.txt',
-        rir_path='/workspace/fairseq/manifest/augmentation/rirs.txt',
+        noise_path=None,
+        rir_path=None,
         low_snr=5,
         high_snr=20,
         purturb="0.9,1.1",
-        is_save=True,
-        is_save_path = "/workspace/fairseq/manifest/augmentation/save",
+        is_save=False,
+        is_save_path = None,
         is_training=True,
         **mask_compute_kwargs,
     ):
@@ -322,9 +322,10 @@ class FileAudioDataset(RawAudioDataset):
         self.noise_rir_prob = noise_rir_prob
         self.speed_perturb_prob = speed_perturb_prob
         self.volume_perturb_prob = volume_perturb_prob
-        self.noise_rir_dataset = NoiseRIR_Dataset( noise_path,
-                                                   rir_path,
-                                                   low_snr=low_snr,high_snr=high_snr)
+        if noise_path is not None and rir_path is not None:
+            self.noise_rir_dataset = NoiseRIR_Dataset(noise_path,
+                                                       rir_path,
+                                                       low_snr=low_snr,high_snr=high_snr)
         self.sp = SpeedPerturb(sr= sample_rate, perturb= purturb)
         self.is_save = is_save
         self.is_save_path = is_save_path

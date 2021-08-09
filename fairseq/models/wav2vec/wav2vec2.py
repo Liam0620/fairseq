@@ -521,6 +521,7 @@ class Wav2Vec2Model(BaseFairseqModel):
         mask=True,
         features_only=False,
         layer=None,
+        fix_n=0,
         mask_indices=None,
         mask_channel_indices=None,
         padding_count=None,
@@ -601,7 +602,7 @@ class Wav2Vec2Model(BaseFairseqModel):
             y = unmasked_features
             mask_indices = None
 
-        x, layer_results = self.encoder(x, padding_mask=padding_mask, layer=layer)
+        x, layer_results = self.encoder(x, padding_mask=padding_mask, layer=layer, fix_n=fix_n)
 
         if features_only:
             return {
@@ -710,9 +711,9 @@ class Wav2Vec2Model(BaseFairseqModel):
         x = self.layer_norm(x)
         return self.quantizer.forward_idx(x)
 
-    def extract_features(self, source, padding_mask, mask=False, layer=None):
+    def extract_features(self, source, padding_mask, mask=False, layer=None, fix_n=0):
         res = self.forward(
-            source, padding_mask, mask=mask, features_only=True, layer=layer
+            source, padding_mask, mask=mask, features_only=True, layer=layer, fix_n=fix_n
         )
         return res
 
@@ -873,15 +874,15 @@ class TransformerEncoder(nn.Module):
 
         self.apply(init_bert_params)
 
-    def forward(self, x, padding_mask=None, layer=None):
-        x, layer_results = self.extract_features(x, padding_mask, layer)
+    def forward(self, x, padding_mask=None, layer=None, fix_n=0):
+        x, layer_results = self.extract_features(x, padding_mask, layer, fix_n)
 
         if self.layer_norm_first and layer is None:
             x = self.layer_norm(x)
 
         return x, layer_results
 
-    def extract_features(self, x, padding_mask=None, tgt_layer=None):
+    def extract_features(self, x, padding_mask=None, tgt_layer=None, fix_n=0):
 
         if padding_mask is not None:
             x = index_put(x, padding_mask, 0)
@@ -903,7 +904,11 @@ class TransformerEncoder(nn.Module):
         for i, layer in enumerate(self.layers):
             dropout_probability = np.random.random()
             if not self.training or (dropout_probability > self.layerdrop):
-                x, z = layer(x, self_attn_padding_mask=padding_mask, need_weights=False)
+                if i<fix_n:
+                    with torch.no_grad():
+                        x, z = layer(x, self_attn_padding_mask=padding_mask, need_weights=False)
+                else:
+                    x, z = layer(x, self_attn_padding_mask=padding_mask, need_weights=False)
                 if tgt_layer is not None:
                     layer_results.append((x, z))
             if i == tgt_layer:

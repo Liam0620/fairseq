@@ -180,7 +180,7 @@ class Wav2VecCIFGPT(BaseFairseqModel):
         self.gpt2 = GPT2LMHeadModel.from_pretrained('gpt2')
         self.fc_alpha = Linear(cfg.decoder_embed_dim, 1)
         self.to_vocab = copy.deepcopy(self.gpt2.lm_head)
-        # self.to_vocab_ctc = copy.deepcopy(to_vocab)
+        self.to_vocab_ctc = copy.deepcopy(self.to_vocab)
         # self.to_vocab_ac = copy.deepcopy(to_vocab)
 
 
@@ -191,7 +191,7 @@ class Wav2VecCIFGPT(BaseFairseqModel):
     @classmethod
     def build_model(cls, cfg: Wav2Vec2CtcConfig, task: FairseqTask):
         """Build a new model instance."""
-        w2v_encoder = Wav2VecEncoder(cfg, len(task.target_dictionary))#len(task.target_dictionary)
+        w2v_encoder = Wav2VecEncoder(cfg, None)#len(task.target_dictionary)
         return cls(cfg, w2v_encoder, task)
 
     def get_logits(self, net_output, normalize=False):
@@ -251,7 +251,7 @@ class Wav2VecCIFGPT(BaseFairseqModel):
         encoder_output = self.w2v_encoder(tbc=False,**kwargs['net_input'])
         hidden_encoded = encoder_output['encoder_out']
         # ctc part
-        logits_ctc = self.to_vocab(hidden_encoded)
+        logits_ctc = self.to_vocab_ctc(hidden_encoded)
         # cif part
         alphas = get_alphas(self.fc_alpha,encoder_output)
 
@@ -351,7 +351,7 @@ class Wav2VecEncoder(FairseqEncoder):
         super().__init__(task.source_dictionary)
 
         d = w2v_args.model.encoder_embed_dim
-
+        self.d = d
         self.w2v_model = model
 
         self.final_dropout = nn.Dropout(cfg.final_dropout)
@@ -366,7 +366,6 @@ class Wav2VecEncoder(FairseqEncoder):
         elif output_size is not None:
             targ_d = output_size
 
-
         if targ_d is not None:
             self.proj = Linear(d, targ_d)
 
@@ -380,6 +379,7 @@ class Wav2VecEncoder(FairseqEncoder):
             "source": source,
             "padding_mask": padding_mask,
             "mask": self.apply_mask and self.training,
+            "fix_n":9
         }
 
         ft = self.freeze_finetune_updates <= self.num_updates
